@@ -1,4 +1,4 @@
-package main
+package chat
 
 import (
 	"errors"
@@ -6,21 +6,26 @@ import (
 	"log"
 	"net"
 	"strings"
+
+	"tcpServer.com/internal/db"
+	"tcpServer.com/internal/models"
 )
 
 type server struct {
 	rooms    map[string]*room
 	commands chan command
+	repo     *db.Repository
 }
 
-func newServer() *server {
+func NewServer(repo *db.Repository) *server {
 	return &server{
 		rooms:    make(map[string]*room),
 		commands: make(chan command),
+		repo:     repo,
 	}
 }
 
-func (s *server) run() {
+func (s *server) Run() {
 	for cmd := range s.commands {
 		switch cmd.id {
 		case CMD_NICK:
@@ -36,7 +41,7 @@ func (s *server) run() {
 		}
 	}
 }
-func (s *server) newClient(conn net.Conn) {
+func (s *server) NewClient(conn net.Conn) {
 	log.Printf("new client has connected : %s", conn.RemoteAddr().String())
 	c := &client{
 		conn:     conn,
@@ -54,6 +59,14 @@ func (s *server) nick(c *client, args []string) {
 		return
 	}
 	c.nick = args[1]
+	_, err := s.repo.FindUserByNickname(c.nick)
+	if err != nil {
+		err = s.repo.CreateUser(&models.User{Nickname: c.nick})
+		if err != nil {
+			c.err(fmt.Errorf("failed to create user: %v", err))
+			return
+		}
+	}
 	c.msg(fmt.Sprintf("all right, I will call you %s", c.nick))
 }
 func (s *server) join(c *client, args []string) {
@@ -62,29 +75,34 @@ func (s *server) join(c *client, args []string) {
 		return
 	}
 	roomName := args[1]
-	r, ok := s.rooms[roomName]
-	if !ok {
-		r = &room{
-			name:    roomName,
-			members: make(map[net.Addr]*client),
+	_, err := s.repo.FindRoomByName(roomName)
+
+	if err != nil {
+		r := &models.Room{
+			Name: roomName,
 		}
-		s.rooms[roomName] = r
+		s.repo.CreateRoom(r)
 
 	}
-	r.members[c.conn.RemoteAddr()] = c
 	if c.room != nil {
 		s.quitCurrentRoom(c)
 	}
-	c.room = r
-	r.broadcast(c, fmt.Sprintf("%s has joined the room", c.nick))
-	c.msg(fmt.Sprintf("welcome to %s", r.name))
+	// c.room = r
+	// r.broadcast(c, fmt.Sprintf("%s has joined the room", c.nick))
+	// c.msg(fmt.Sprintf("welcome to %s", r.name))
 }
 func (s *server) listRooms(c *client, args []string) {
-	var rooms []string
-	for name := range s.rooms {
-		rooms = append(rooms, name)
+	rooms, err := s.repo.FindAllRooms()
+	if err != nil {
+		log.Printf("error querying rooms: %s", err)
+		c.msg("⚠️ Error retrieving rooms. Please try again later.")
+		return
 	}
-	c.msg(fmt.Sprintf("available rooms are: %s", strings.Join(rooms, ", ")))
+	if len(rooms) == 0 {
+		c.msg("No available rooms at the moment. Create one with /join <room_name>")
+		return
+	}
+	c.msg(fmt.Sprintf("Available rooms: %s", strings.Join(rooms, ", ")))
 }
 
 func (s *server) msg(c *client, args []string) {
