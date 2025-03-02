@@ -49,10 +49,18 @@ func (s *server) newClient(conn net.Conn) {
 }
 
 func (s *server) nick(c *client, args []string) {
+	if len(args) < 2 {
+		c.err(errors.New("missing field for nickname"))
+		return
+	}
 	c.nick = args[1]
 	c.msg(fmt.Sprintf("all right, I will call you %s", c.nick))
 }
 func (s *server) join(c *client, args []string) {
+	if len(args) < 2 {
+		c.err(errors.New("missing field for room name"))
+		return
+	}
 	roomName := args[1]
 	r, ok := s.rooms[roomName]
 	if !ok {
@@ -78,7 +86,12 @@ func (s *server) listRooms(c *client, args []string) {
 	}
 	c.msg(fmt.Sprintf("available rooms are: %s", strings.Join(rooms, ", ")))
 }
+
 func (s *server) msg(c *client, args []string) {
+	if len(args) < 2 {
+		c.err(errors.New("missing field for message"))
+		return
+	}
 	if c.room == nil {
 		c.err(errors.New("you must join the room first"))
 		return
@@ -102,9 +115,9 @@ func (s *server) quitCurrentRoom(c *client) {
 func (s *server) showMenu(c *client) {
 	c.info("Welcome to the tcp chat app !")
 	c.info("Menu: ")
-	c.info("	- /nick: set a nickname ")
-	c.info("	- /join: join a room ")
+	c.info("	- /nick <nickname> : set a nickname ")
+	c.info("	- /join <room> : join a room ")
 	c.info("	- /rooms: list rooms ")
-	c.info("	- /msg: send msg in a room (you must join it first)")
+	c.info("	- /msg <message> : send msg in a room (you must join it first)")
 	c.info("	- /quit: quit")
 }
