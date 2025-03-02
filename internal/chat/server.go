@@ -1,12 +1,14 @@
 package chat
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"strings"
 
+	"tcpServer.com/internal/auth"
 	"tcpServer.com/internal/db"
 	"tcpServer.com/internal/models"
 )
@@ -26,10 +28,10 @@ func NewServer(repo *db.Repository) *server {
 }
 
 func (s *server) Run() {
+
 	for cmd := range s.commands {
 		switch cmd.id {
-		case CMD_NICK:
-			s.nick(cmd.client, cmd.args)
+
 		case CMD_JOIN:
 			s.join(cmd.client, cmd.args)
 		case CMD_ROOMS:
@@ -38,71 +40,178 @@ func (s *server) Run() {
 			s.msg(cmd.client, cmd.args)
 		case CMD_QUIT:
 			s.quit(cmd.client, cmd.args)
+
 		}
 	}
 }
 func (s *server) NewClient(conn net.Conn) {
-	log.Printf("new client has connected : %s", conn.RemoteAddr().String())
+	log.Printf("new client attempting to connect : %s", conn.RemoteAddr().String())
+
 	c := &client{
 		conn:     conn,
-		nick:     "anonymous",
 		commands: s.commands,
 	}
+
+	s.handleAuth(c)
 
 	s.showMenu(c)
 	c.readInput()
 }
 
-func (s *server) nick(c *client, args []string) {
-	if len(args) < 2 {
-		c.err(errors.New("missing field for nickname"))
-		return
-	}
-	c.nick = args[1]
-	_, err := s.repo.FindUserByNickname(c.nick)
-	if err != nil {
-		err = s.repo.CreateUser(&models.User{Nickname: c.nick})
+func (s *server) handleAuth(c *client) {
+	c.info("Welcome! You can either log in to your account or create a new one.")
+	c.info("- Type 1: Log in")
+	c.info("- Type 2: Create an account")
+
+	num, _ := bufio.NewReader(c.conn).ReadString('\n')
+	num = strings.TrimSpace(num)
+
+	switch num {
+	case "1":
+		c.msg("Enter your nickname:")
+		nickname, _ := bufio.NewReader(c.conn).ReadString('\n')
+		nickname = strings.TrimSpace(nickname)
+
+		c.msg("Enter your password:")
+		password, _ := bufio.NewReader(c.conn).ReadString('\n')
+		password = strings.TrimSpace(password)
+
+		user, err := s.repo.FindUserByNickname(nickname)
 		if err != nil {
-			c.err(fmt.Errorf("failed to create user: %v", err))
+			c.err(errors.New("user not found"))
+			log.Printf(err.Error())
+			c.conn.Close()
 			return
 		}
+
+		if !auth.CheckPassword(password, user.Password) {
+			c.err(errors.New("invalid password"))
+			c.conn.Close()
+			return
+		}
+
+		// token, err := auth.GenerateJWT(nickname)
+		// if err != nil {
+
+		// }
+		// c.nick = nickname
+		// c.token = token
+		// c.msg(fmt.Sprintf("token,%s", token))
+		c.msg(fmt.Sprintf("Welcome back, %s", nickname))
+
+	case "2":
+		c.msg("Choose a nickname:")
+		nickname, _ := bufio.NewReader(c.conn).ReadString('\n')
+		nickname = strings.TrimSpace(nickname)
+
+		_, err := s.repo.FindUserByNickname(nickname)
+		if err == nil {
+			c.err(errors.New("nickname already taken"))
+			c.conn.Close()
+			return
+		}
+
+		c.msg("Enter a password:")
+		password, _ := bufio.NewReader(c.conn).ReadString('\n')
+		password = strings.TrimSpace(password)
+		fmt.Println(password)
+
+		hashedPassword := auth.HashPassword(password)
+
+		user := &models.User{
+			Nickname: nickname,
+			Password: hashedPassword,
+		}
+
+		err = s.repo.CreateUser(user)
+		if err != nil {
+			c.err(fmt.Errorf("failed to create user: %v", err))
+			c.conn.Close()
+			return
+		}
+		// token, err := auth.GenerateJWT(nickname)
+		// if err != nil {
+
+		// }
+		// c.nick = nickname
+		// c.token = token
+		// c.msg(fmt.Sprintf("token,%s", token))
+		c.msg(fmt.Sprintf("Welcome, %s !", nickname))
+
+	default:
+		c.err(errors.New("invalid choice"))
+		c.conn.Close()
+		return
 	}
-	c.msg(fmt.Sprintf("all right, I will call you %s", c.nick))
 }
+
 func (s *server) join(c *client, args []string) {
 	if len(args) < 2 {
 		c.err(errors.New("missing field for room name"))
 		return
 	}
 	roomName := args[1]
+
+	// Ensure room exists in the database
 	_, err := s.repo.FindRoomByName(roomName)
-
 	if err != nil {
-		r := &models.Room{
-			Name: roomName,
+		// Create room in DB if not found
+		if err := s.repo.CreateRoom(&models.Room{Name: roomName}); err != nil {
+			c.err(fmt.Errorf("failed to create room: %v", err))
+			return
 		}
-		s.repo.CreateRoom(r)
-
 	}
+
+	// Get or create in-memory room
+	r, exists := s.rooms[roomName]
+	if !exists {
+		r = &room{
+			name:    roomName,
+			members: make(map[net.Addr]*client),
+		}
+		s.rooms[roomName] = r
+	}
+
+	// Remove client from previous room
 	if c.room != nil {
 		s.quitCurrentRoom(c)
 	}
-	// c.room = r
-	// r.broadcast(c, fmt.Sprintf("%s has joined the room", c.nick))
-	// c.msg(fmt.Sprintf("welcome to %s", r.name))
+
+	// Add client to the new room
+	r.members[c.conn.RemoteAddr()] = c
+	c.room = r
+
+	// Notify room
+	r.broadcast(c, fmt.Sprintf("%s joined the room", c.nick))
+	c.msg(fmt.Sprintf("Joined %s", roomName))
 }
+
 func (s *server) listRooms(c *client, args []string) {
-	rooms, err := s.repo.FindAllRooms()
+	dbRooms, err := s.repo.FindAllRooms()
 	if err != nil {
-		log.Printf("error querying rooms: %s", err)
-		c.msg("⚠️ Error retrieving rooms. Please try again later.")
+		c.msg("⚠️ Error retrieving rooms")
 		return
 	}
-	if len(rooms) == 0 {
-		c.msg("No available rooms at the moment. Create one with /join <room_name>")
-		return
+
+	activeRooms := make(map[string]bool)
+	for name := range s.rooms {
+		activeRooms[name] = true
 	}
-	c.msg(fmt.Sprintf("Available rooms: %s", strings.Join(rooms, ", ")))
+
+	var roomList []string
+	for _, name := range dbRooms {
+		if activeRooms[name] {
+			roomList = append(roomList, fmt.Sprintf("%s (active)", name))
+		} else {
+			roomList = append(roomList, name)
+		}
+	}
+
+	if len(roomList) == 0 {
+		c.msg("No rooms found. Use /join <name> to create one.")
+	} else {
+		c.msg("Rooms: " + strings.Join(roomList, ", "))
+	}
 }
 
 func (s *server) msg(c *client, args []string) {
@@ -114,7 +223,7 @@ func (s *server) msg(c *client, args []string) {
 		c.err(errors.New("you must join the room first"))
 		return
 	}
-	c.room.broadcast(c, c.nick+": "+strings.Join(args[1:len(args)], " "))
+	c.room.broadcast(c, c.nick+": "+strings.Join(args[1:], " "))
 }
 func (s *server) quit(c *client, args []string) {
 	log.Printf("client has disconnected: %s", c.conn.RemoteAddr().String())

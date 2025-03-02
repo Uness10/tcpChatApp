@@ -6,4 +6,5 @@ type User struct {
 	ID        int
 	Nickname  string
 	CreatedAt time.Time
+	Password  string
 }

@@ -17,17 +17,17 @@ func NewRepository(db *sql.DB) *Repository {
 
 func (r *Repository) CreateUser(user *models.User) error {
 	return r.db.QueryRow(
-		"INSERT INTO users (nickname) VALUES ($1) RETURNING id,created_at",
-		user.Nickname,
+		"INSERT INTO users (nickname,password) VALUES ($1,$2) RETURNING id,created_at",
+		user.Nickname, user.Password,
 	).Scan(&user.ID, &user.CreatedAt)
 }
 
 func (r *Repository) FindUserByNickname(nickname string) (*models.User, error) {
 	var user models.User
 	err := r.db.QueryRow(
-		"SELECT id, nickname, created_at FROM users WHERE nickname = $1",
+		"SELECT id, nickname, created_at,password FROM users WHERE nickname = $1",
 		nickname,
-	).Scan(&user.ID, &user.Nickname, &user.CreatedAt)
+	).Scan(&user.ID, &user.Nickname, &user.CreatedAt, &user.Password)
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +39,37 @@ func (r *Repository) CreateRoom(room *models.Room) error {
 		"INSERT INTO rooms (name) VALUES ($1) RETURNING id, created_at",
 		room.Name,
 	).Scan(&room.ID, &room.CreatedAt)
+}
+
+func (r *Repository) FindRoomMembers(roomName string) ([]models.User, error) {
+	query := `
+		SELECT u.id, u.nickname, u.created_at 
+		FROM enrollements e
+		JOIN users u ON e.user_id = u.id
+		JOIN rooms r ON e.room_id = r.id
+		WHERE r.name = $1;
+	`
+
+	rows, err := r.db.Query(query, roomName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query members: %w", err)
+	}
+	defer rows.Close()
+
+	var members []models.User
+	for rows.Next() {
+		var user models.User
+		if err := rows.Scan(&user.ID, &user.Nickname, &user.CreatedAt); err != nil {
+			return nil, fmt.Errorf("error scanning member data: %w", err)
+		}
+		members = append(members, user)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iteration error: %w", err)
+	}
+
+	return members, nil
 }
 
 func (r *Repository) FindAllRooms() ([]string, error) {

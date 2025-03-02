@@ -11,6 +11,7 @@ type client struct {
 	conn     net.Conn
 	nick     string
 	room     *room
+	token    string
 	commands chan<- command
 }
 
@@ -24,12 +25,7 @@ func (c *client) readInput() {
 		args := strings.Split(msg, " ")
 		cmd := strings.TrimSpace(args[0])
 		switch cmd {
-		case "/nick":
-			c.commands <- command{
-				id:     CMD_NICK,
-				client: c,
-				args:   args,
-			}
+
 		case "/join":
 			c.commands <- command{
 				id:     CMD_JOIN,
