@@ -41,37 +41,6 @@ func (r *Repository) CreateRoom(room *models.Room) error {
 	).Scan(&room.ID, &room.CreatedAt)
 }
 
-func (r *Repository) FindRoomMembers(roomName string) ([]models.User, error) {
-	query := `
-		SELECT u.id, u.nickname, u.created_at 
-		FROM enrollements e
-		JOIN users u ON e.user_id = u.id
-		JOIN rooms r ON e.room_id = r.id
-		WHERE r.name = $1;
-	`
-
-	rows, err := r.db.Query(query, roomName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query members: %w", err)
-	}
-	defer rows.Close()
-
-	var members []models.User
-	for rows.Next() {
-		var user models.User
-		if err := rows.Scan(&user.ID, &user.Nickname, &user.CreatedAt); err != nil {
-			return nil, fmt.Errorf("error scanning member data: %w", err)
-		}
-		members = append(members, user)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iteration error: %w", err)
-	}
-
-	return members, nil
-}
-
 func (r *Repository) FindAllRooms() ([]string, error) {
 	rows, err := r.db.Query("SELECT name FROM rooms")
 	if err != nil {
@@ -106,6 +75,8 @@ func (r *Repository) FindRoomByName(name string) (*models.Room, error) {
 	}
 	return &room, nil
 }
+
+// to integrate later
 func (r *Repository) SaveMessage(message *models.Message) error {
 	_, err := r.db.Exec(
 		"INSERT INTO messages (content, room_id, user_id) VALUES ($1,$2,$3)",
@@ -120,4 +91,35 @@ func (r *Repository) EnrollUser(enrollement *models.Enrollement) error {
 		enrollement.UserID, enrollement.RoomID,
 	)
 	return err
+}
+
+func (r *Repository) FindRoomMembers(roomName string) ([]models.User, error) {
+	query := `
+		SELECT u.id, u.nickname, u.created_at 
+		FROM enrollements e
+		JOIN users u ON e.user_id = u.id
+		JOIN rooms r ON e.room_id = r.id
+		WHERE r.name = $1;
+	`
+
+	rows, err := r.db.Query(query, roomName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query members: %w", err)
+	}
+	defer rows.Close()
+
+	var members []models.User
+	for rows.Next() {
+		var user models.User
+		if err := rows.Scan(&user.ID, &user.Nickname, &user.CreatedAt); err != nil {
+			return nil, fmt.Errorf("error scanning member data: %w", err)
+		}
+		members = append(members, user)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iteration error: %w", err)
+	}
+
+	return members, nil
 }

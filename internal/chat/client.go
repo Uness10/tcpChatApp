@@ -38,6 +38,12 @@ func (c *client) readInput() {
 				client: c,
 				args:   args,
 			}
+		case "/file":
+			c.commands <- command{
+				id:     CMD_FILE,
+				client: c,
+				args:   args,
+			}
 		case "/msg":
 			c.commands <- command{
 				id:     CMD_MSG,

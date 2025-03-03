@@ -3,10 +3,10 @@ package chat
 type commandID int
 
 const (
-	CMD_NICK commandID = iota
-	CMD_JOIN
+	CMD_JOIN commandID = iota
 	CMD_ROOMS
 	CMD_MSG
+	CMD_FILE
 	CMD_QUIT
 )
 
