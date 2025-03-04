@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"tcpServer.com/internal/auth"
@@ -234,17 +235,23 @@ func (s *server) quitCurrentRoom(c *client) {
 }
 
 func (s *server) handleFile(c *client, args []string) {
-	if len(args) < 2 {
-		c.err(errors.New("missing field for file name"))
-		return
-	}
-	if c.room == nil {
-		c.err(errors.New("you must join the room first"))
+	if len(args) < 3 {
+		c.err(errors.New("usage: /file <filename> <size>"))
 		return
 	}
 
 	filename := args[1]
-	filePath := fmt.Sprintf("./uploads/%s", filename)
+	fileSize, err := strconv.Atoi(args[2])
+	if err != nil || fileSize <= 0 {
+		c.err(errors.New("invalid file size"))
+		return
+	}
+
+	// Ensure user is in a room
+	if c.room == nil {
+		c.err(errors.New("you must join a room first"))
+		return
+	}
 
 	// Create the uploads directory if it doesn't exist
 	if err := os.MkdirAll("./uploads", os.ModePerm); err != nil {
@@ -253,30 +260,32 @@ func (s *server) handleFile(c *client, args []string) {
 	}
 
 	// Create the file
-	file, err := os.Create(filePath)
+	file, err := os.Create("./uploads/" + filename)
 	if err != nil {
 		c.err(fmt.Errorf("failed to create file: %v", err))
 		return
 	}
 	defer file.Close()
 
-	// Read the file data from the client
-	_, err = io.Copy(file, c.conn)
-	if err != nil {
-		c.err(fmt.Errorf("failed to receive file: %v", err))
-		return
-	}
+	// Read file data in chunks
+	buffer := make([]byte, 1024)
+	remaining := fileSize
 
-	// Notify the room about the file
-	c.room.broadcast(c, fmt.Sprintf("%s sent a file: %s", c.nick, filename))
-
-	// Send the file to all room members
-	for _, member := range c.room.members {
-		if member.conn.RemoteAddr() != c.conn.RemoteAddr() {
-			member.msg(fmt.Sprintf("Receiving file: %s", filename))
-			s.sendFileToClient(member, filePath)
+	for remaining > 0 {
+		n, err := c.conn.Read(buffer)
+		fmt.Println(buffer)
+		if n > 0 {
+			file.Write(buffer[:n])
+			remaining -= n
+		}
+		if err != nil {
+			c.err(fmt.Errorf("failed to receive file: %v", err))
+			return
 		}
 	}
+
+	// Notify the room
+	c.room.broadcast(c, fmt.Sprintf("%s sent a file: %s", c.nick, filename))
 }
 
 func (s *server) sendFileToClient(c *client, filePath string) {
