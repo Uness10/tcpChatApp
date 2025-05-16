@@ -1,0 +1,10 @@
+{
+  "defaultServer": "localhost:8080",
+  "defaultUsername": "",
+  "lastRoom": "",
+  "colorEnabled": true,
+  "downloadPath": "appData",
+  "autoReconnect": true,
+  "reconnectDelay": 5,
+  "logLevel": "info"
+}
