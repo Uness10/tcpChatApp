@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -40,10 +41,13 @@ func (c *Client) ReadPump() {
 	reader := bufio.NewReader(c.Conn)
 
 	for {
+		// Reset the deadline whenever we attempt to read
+		c.Conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+
 		message, err := reader.ReadBytes('\n')
 		if err != nil {
-			log.Printf("Error reading from client: %v", err)
-			break
+			log.Printf("Unexpected read error from %s: %v", c.Conn.RemoteAddr(), err)
+			return
 		}
 
 		var msg shared.Message
@@ -66,6 +70,9 @@ func (c *Client) WritePump() {
 		if !ok {
 			return
 		}
+
+		// Reset the deadline whenever we send data
+		c.Conn.SetWriteDeadline(time.Now().Add(5 * time.Minute))
 
 		c.Conn.Write(message)
 		c.Conn.Write([]byte("\n"))
@@ -281,15 +288,18 @@ func (c *Client) SendDirectMessage(message []byte) {
 }
 
 func (c *Client) handleAuth(authMsg shared.AuthMessage) {
+	// Check if the user is already logged in elsewhere
+	if c.Server.IsUserLoggedIn(authMsg.Username) {
+		c.sendError("This user is already logged in. Only one connection per user is allowed.")
+		return
+	}
+
 	if authMsg.Content == "register" {
 		success := c.Server.AuthManager.RegisterUser(authMsg.Username, authMsg.Password)
 		if success {
 			c.Username = authMsg.Username
 			c.isLoggedIn = true
 			c.sendSuccess("Registered and logged in successfully")
-
-			// Remove automatic room joining
-			// No longer joining default room
 		} else {
 			c.sendError("Username already exists")
 		}
@@ -299,9 +309,6 @@ func (c *Client) handleAuth(authMsg shared.AuthMessage) {
 			c.Username = authMsg.Username
 			c.isLoggedIn = true
 			c.sendSuccess("Logged in successfully")
-
-			// Remove automatic room joining
-			// No longer joining default room
 		} else {
 			c.sendError("Invalid credentials")
 		}
@@ -329,7 +336,40 @@ func (c *Client) handleCommand(msg shared.Message) {
 		}
 
 		respBytes, _ := json.Marshal(response)
-		c.Send <- respBytes
+		// Replace direct channel usage with SendDirectMessage for consistency
+		c.SendDirectMessage(respBytes)
+
+	case "list":
+		// Check if the client is in a room
+		if c.Room == nil {
+			c.sendError("You are not in a room")
+			return
+		}
+
+		// Get the list of clients in the room
+		c.Room.mu.RLock()
+		clientList := make([]string, 0, len(c.Room.Clients))
+		for client := range c.Room.Clients {
+			if client.Username != "" {
+				clientList = append(clientList, client.Username)
+			}
+		}
+		c.Room.mu.RUnlock()
+
+		// Create and send the response
+		responseContent := fmt.Sprintf("Users in room %s (%d): %s",
+			c.Room.Name, len(clientList), strings.Join(clientList, ", "))
+
+		response := shared.Message{
+			Type:      shared.MessageTypeCommand,
+			Content:   responseContent,
+			Sender:    "Server",
+			Timestamp: time.Now(),
+		}
+
+		respBytes, _ := json.Marshal(response)
+		// Replace direct channel usage with SendDirectMessage for consistency
+		c.SendDirectMessage(respBytes)
 
 	case "create":
 		if msg.Room == "" {
@@ -373,8 +413,18 @@ func (c *Client) handleCommand(msg shared.Message) {
 				start = len(history) - 10
 			}
 
-			for _, msg := range history[start:] {
-				msgBytes, _ := json.Marshal(msg)
+			for _, historyItem := range history[start:] {
+				// Format each history message to include sender and timestamp
+				formattedMsg := shared.Message{
+					Type: shared.MessageTypeCommand,
+					Content: fmt.Sprintf("[%s] %s: %s",
+						historyItem.Timestamp.Format("15:04:05"),
+						historyItem.Sender,
+						historyItem.Content),
+					Sender:    "Server",
+					Timestamp: time.Now(),
+				}
+				msgBytes, _ := json.Marshal(formattedMsg)
 				c.SendDirectMessage(msgBytes)
 			}
 		}
@@ -544,8 +594,12 @@ func (c *Client) handleCommand(msg shared.Message) {
 			c.SendDirectMessage(historyBytes)
 
 			// Send all direct messages
-			for _, msg := range history {
-				msgBytes, _ := json.Marshal(msg)
+			for _, historyItem := range history {
+				// Ensure we're sending a copy of the message, not the original
+				privateMsg := historyItem
+				// Use MessageTypeCommand to ensure it's displayed properly and not broadcast
+				privateMsg.Type = shared.MessageTypeCommand
+				msgBytes, _ := json.Marshal(privateMsg)
 				c.SendDirectMessage(msgBytes)
 			}
 		} else {
@@ -576,11 +630,41 @@ func (c *Client) handleCommand(msg shared.Message) {
 				start = len(history) - 20
 			}
 
-			for _, msg := range history[start:] {
-				msgBytes, _ := json.Marshal(msg)
+			for _, historyItem := range history[start:] {
+				// Format the history message to include sender information
+				formattedMsg := shared.Message{
+					Type: shared.MessageTypeCommand,
+					// Format the content to include sender, timestamp, and message
+					Content: fmt.Sprintf("[%s] %s: %s",
+						historyItem.Timestamp.Format("15:04:05"),
+						historyItem.Sender,
+						historyItem.Content),
+					Sender:    "Server",
+					Timestamp: time.Now(),
+				}
+				msgBytes, _ := json.Marshal(formattedMsg)
 				c.SendDirectMessage(msgBytes)
 			}
 		}
+
+	case "exit":
+		// Clean up - leave any room first
+		if c.Room != nil {
+			oldRoom := c.Room
+			c.Room = nil
+			oldRoom.RemoveClient(c)
+			oldRoom.BroadcastEvent(shared.EventUserLeft, c.Username, "")
+		}
+
+		// Send goodbye message to client
+		c.sendSuccess("Goodbye! Disconnecting...")
+
+		// Schedule disconnection after message is sent
+		go func() {
+			// Give time for the goodbye message to be sent
+			time.Sleep(100 * time.Millisecond)
+			c.Server.Unregister <- c
+		}()
 
 	default:
 		c.sendError("Unknown command: " + cmd)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"chatap.com/shared"
 )
@@ -67,6 +68,9 @@ func (s *Server) Run() error {
 			log.Printf("Error accepting connection: %v", err)
 			continue
 		}
+
+		// Set timeout for idle connections
+		conn.SetDeadline(time.Now().Add(5 * time.Minute))
 
 		client := NewClient(conn, s)
 		s.Register <- client
@@ -141,4 +145,17 @@ func (s *Server) SendToClient(username string, message []byte) bool {
 // GetRoomUploadPath returns the path where files for a specific room should be stored
 func (s *Server) GetRoomUploadPath(roomName string) string {
 	return filepath.Join(UploadsDir, roomName)
+}
+
+// IsUserLoggedIn checks if a username is already being used by an active client
+func (s *Server) IsUserLoggedIn(username string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for client := range s.Clients {
+		if client.isLoggedIn && client.Username == username {
+			return true
+		}
+	}
+	return false
 }

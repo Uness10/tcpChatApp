@@ -70,7 +70,6 @@ Files are automatically saved in:
 
 ### History
 - Room history: `/history`
-- DM history: `/history <username>`
 
 ### Exit
 - Close client: `/exit`
@@ -118,7 +117,9 @@ SUCCESS: Joined room: room1
 /file greetings.txt
 [03:16:08] bob is sending file: greetings.txt
 [03:16:08] File greetings.txt uploaded by bob is available
-```
+/history
+Message history for room general:
+[03:24:18] [general] alice: Hello everyone!
 
 3. **Advanced Features Example**
 ```

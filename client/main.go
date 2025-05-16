@@ -161,11 +161,12 @@ func (c *Client) handleInput() {
 	fmt.Println("  /create <room-name>")
 	fmt.Println("  /join <room-name>")
 	fmt.Println("  /leave")
+	fmt.Println("  /list")
 	fmt.Println("  /file <filepath>")
 	fmt.Println("  /msg <username> <message>")
 	fmt.Println("  /encrypt <username> <message>")
 	fmt.Println("  /status <online|away|busy|offline>")
-	fmt.Println("  /history [username]")
+	fmt.Println("  /history")
 	fmt.Println("  /exit")
 
 	for scanner.Scan() {
@@ -263,7 +264,7 @@ func (c *Client) handleCommand(input string) {
 		c.username = username
 		c.isLoggedIn = true
 
-	case "/rooms", "/create", "/join", "/leave":
+	case "/rooms", "/create", "/join", "/leave", "/list":
 		if !c.isLoggedIn {
 			fmt.Println("You need to log in first")
 			return
@@ -298,19 +299,15 @@ func (c *Client) handleCommand(input string) {
 			fmt.Println("You need to log in first")
 			return
 		}
-
 		if c.currentRoom == "" {
 			fmt.Println("You need to join a room first")
 			return
 		}
-
 		if len(parts) < 2 {
 			fmt.Println("Usage: /send-file <filepath>")
 			return
 		}
-
 		filepath := parts[1]
-
 		// Verify file exists and can be read
 		fileInfo, err := os.Stat(filepath)
 		if os.IsNotExist(err) {
@@ -321,28 +318,23 @@ func (c *Client) handleCommand(input string) {
 			fmt.Printf("Error accessing file: %v\n", err)
 			return
 		}
-
 		// Check if file is empty
 		if fileInfo.Size() == 0 {
 			fmt.Printf("Error: File is empty: %s\n", filepath)
 			return
 		}
-
 		chunks, err := shared.EncodeFileToChunks(filepath)
 		if err != nil {
 			fmt.Printf("Error preparing file: %v\n", err)
 			return
 		}
-
 		if len(chunks) == 0 {
 			fmt.Printf("Error: No chunks generated for file: %s\n", filepath)
 			return
 		}
-
 		for i, chunk := range chunks {
 			chunk.Sender = c.username
 			chunk.Room = c.currentRoom
-
 			msgBytes, _ := json.Marshal(chunk)
 			_, err := c.conn.Write(msgBytes)
 			if err != nil {
@@ -354,10 +346,8 @@ func (c *Client) handleCommand(input string) {
 				fmt.Printf("Error sending chunk %d: %v\n", i+1, err)
 				return
 			}
-
 			time.Sleep(100 * time.Millisecond) // Throttle to avoid flooding
 		}
-
 		// Remove "File sent successfully" message as it's misleading
 		// The server will respond with success or error
 
@@ -366,40 +356,32 @@ func (c *Client) handleCommand(input string) {
 			fmt.Println("You need to log in first")
 			return
 		}
-
 		if len(parts) < 3 {
 			fmt.Println("Usage: /msg <username> <message>")
 			return
 		}
-
 		recipient := parts[1]
 		content := strings.Join(parts[2:], " ")
-
 		msg := shared.Message{
 			Type:      shared.MessageTypeDirect,
 			Content:   content,
 			Recipient: recipient,
 			Timestamp: time.Now(),
 		}
-
 		msgBytes, _ := json.Marshal(msg)
 		c.conn.Write(msgBytes)
 		c.conn.Write([]byte("\n"))
-
 	case "/encrypt":
 		if !c.isLoggedIn {
 			fmt.Println("You need to log in first")
 			return
 		}
-
 		if len(parts) < 3 {
 			fmt.Println("Usage: /encrypt <username> <message>")
 			return
 		}
-
 		recipient := parts[1]
 		content := strings.Join(parts[2:], " ")
-
 		// Simple encryption demo
 		key := []byte("0123456789abcdef") // 16-byte key for AES-128
 		encryptedContent, err := shared.Encrypt(content, key)
@@ -407,7 +389,6 @@ func (c *Client) handleCommand(input string) {
 			fmt.Printf("Error encrypting message: %v\n", err)
 			return
 		}
-
 		msg := shared.Message{
 			Type:      shared.MessageTypeEncrypted,
 			Content:   encryptedContent,
@@ -415,25 +396,20 @@ func (c *Client) handleCommand(input string) {
 			Timestamp: time.Now(),
 			Encrypted: true,
 		}
-
 		msgBytes, _ := json.Marshal(msg)
 		c.conn.Write(msgBytes)
 		c.conn.Write([]byte("\n"))
-
 	case "/status":
 		if !c.isLoggedIn {
 			fmt.Println("You need to log in first")
 			return
 		}
-
 		if len(parts) < 2 {
 			fmt.Println("Usage: /status <online|away|busy|offline>")
 			return
 		}
-
 		status := strings.ToLower(parts[1])
 		var statusValue shared.UserStatus
-
 		switch status {
 		case "online":
 			statusValue = shared.StatusOnline
@@ -447,7 +423,6 @@ func (c *Client) handleCommand(input string) {
 			fmt.Println("Invalid status. Use: online, away, busy, or offline")
 			return
 		}
-
 		statusMsg := shared.StatusMessage{
 			Message: shared.Message{
 				Type:      shared.MessageTypeStatus,
@@ -455,44 +430,36 @@ func (c *Client) handleCommand(input string) {
 			},
 			Status: statusValue,
 		}
-
 		msgBytes, _ := json.Marshal(statusMsg)
 		c.conn.Write(msgBytes)
 		c.conn.Write([]byte("\n"))
-
 		fmt.Printf("Status updated to: %s\n", status)
-
 	case "/history":
 		if !c.isLoggedIn {
 			fmt.Println("You need to log in first")
 			return
 		}
-
 		var historyCmd string
 		if len(parts) > 1 {
 			historyCmd = "history " + parts[1] // Username for DM history
 		} else {
 			historyCmd = "history" // Room history
 		}
-
 		msg := shared.Message{
 			Type:      shared.MessageTypeCommand,
 			Content:   historyCmd,
 			Timestamp: time.Now(),
 		}
-
 		msgBytes, _ := json.Marshal(msg)
 		c.conn.Write(msgBytes)
 		c.conn.Write([]byte("\n"))
-
 	case "/exit":
 		fmt.Println("Exiting...")
 		c.conn.Close()
 		os.Exit(0)
-
 	default:
 		fmt.Println("Unknown command:", cmd)
-		fmt.Println("Available commands: /register, /login, /rooms, /create, /join, /leave, /file, /msg, /encrypt, /status, /history, /exit")
+		fmt.Println("Available commands: /register, /login, /rooms, /create, /join, /leave, /list, /file, /msg, /encrypt, /status, /history, /exit")
 	}
 }
 
@@ -503,6 +470,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	client.Start()
 }
