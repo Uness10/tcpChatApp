@@ -1,180 +1,204 @@
-# TCP Chat Application
+# 🔌 TCP Chat Application (GoLang)
 
-A feature-rich TCP chat application written in Go that supports room-based chat, direct messaging, file sharing, and message encryption.
+A full-featured, modular TCP chat system written in Go, supporting real-time room-based messaging, direct user communication, encrypted messages, and file transfers. Built for simplicity, security, and scalability.
 
-## Features
+---
 
-- 🔐 User Authentication (Register/Login)
-- 👥 Room-based Chat System
-- 📝 Direct Messaging between Users
-- 🔒 End-to-End Encrypted Messages
-- 📁 File Sharing
-- 📜 Message History
-- 🟢 User Status (Online/Away/Busy/Offline)
-- 💾 Persistent Message Storage
+## ✨ Features
 
-## Building and Running
+* 🔐 **User Authentication** (Register / Login)
+* 👥 **Room-Based Group Chat**
+* 💬 **Direct Messaging (DMs)**
+* 🔒 **End-to-End Message Encryption**
+* 📁 **File Sharing (with chunked uploads)**
+* 🧾 **Message History & Persistence**
+* 🟢 **User Presence Status (Online/Away/Busy/Offline)**
 
-### Prerequisites
-- Go 1.20 or later
-- Windows (for build.bat) or similar commands for other OS
+---
 
-### Building
+## 🛠️ Getting Started
+
+### ✅ Prerequisites
+
+* Go 1.20+
+* Windows (for `build.bat`) or equivalent build setup on Linux/Mac
+
+### ⚙️ Building
+
 Run the build script:
+
 ```bash
 build.bat
 ```
 
-This will create:
-- `server/chat-server.exe`
-- `client/chat-client.exe`
+This generates:
 
-### Running
-1. Start the server:
+* `server/chat-server.exe`
+* `client/chat-client.exe`
+
+### 🚀 Running
+
+**Start the server:**
+
 ```bash
 cd server
 ./chat-server.exe
 ```
 
-2. Start one or more clients:
+**Start a client instance:**
+
 ```bash
 cd client
 ./chat-client.exe
 ```
 
-## Command Reference
+Run multiple clients for multi-user simulation.
 
-### Authentication
-- Register: `/register <username> <password>`
-- Login: `/login <username> <password>`
+---
 
-### Room Management
-- List rooms: `/rooms`
-- Create room: `/create <room-name>`
-- Join room: `/join <room-name>`
-- Leave room: `/leave`
+## 📖 Command Reference
 
-### Messaging
-- Regular chat: Just type your message
-- Direct message: `/msg <username> <message>`
-- Encrypted message: `/encrypt <username> <message>`
+### 👤 Authentication
 
-### File Sharing
-- Send file: `/file <filepath>`
-Files are automatically saved in:
-- Server: `uploads/<room-name>/`
-- Client: `appData/`
+* `/register <username> <password>` – Register a new user
+* `/login <username> <password>` – Log in as a registered user
 
-### User Status
-- Set status: `/status <online|away|busy|offline>`
+### 🧩 Room Management
 
-### History
-- Room history: `/history`
+* `/rooms` – List available rooms
+* `/create <room-name>` – Create a new chat room
+* `/join <room-name>` – Join an existing room
+* `/leave` – Leave the current room
 
-### Exit
-- Close client: `/exit`
+### 💬 Messaging
 
-## Example Workflow
+* *(Default)* – Send a message to the current room
+* `/msg <username> <message>` – Send a private message
+* `/encrypt <username> <message>` – Send an AES-encrypted message
 
-1. **Starting Up**
+### 📁 File Sharing
+
+* `/file <filepath>` – Send a file to the room
+* Server stores to: `uploads/<room-name>/`
+* Client receives into: `appData/`
+
+### 🟢 User Presence
+
+* `/status <online|away|busy|offline>` – Update your availability
+
+### 🕘 Message History
+
+* `/history` – Show current room's message history
+
+### 🔚 Exit
+
+* `/exit` – Exit the chat client
+
+---
+
+## 🎬 Example Workflow
+
+### 1. Boot Sequence
+
 ```bash
-# Terminal 1 - Start Server
+# Server
 cd server
 ./chat-server.exe
 
-# Terminal 2 - Start Client 1
+# Client 1
 cd client
 ./chat-client.exe
 
-# Terminal 3 - Start Client 2
+# Client 2
 cd client
 ./chat-client.exe
 ```
 
-2. **Basic Usage Example**
-```
+### 2. Basic Use
+
+```bash
 # Client 1
 /register alice pass123
-SUCCESS: Registered and logged in successfully
 /create room1
-[02:54:10] alice has joined the room
-[02:54:11] bob has joined the room
-SUCCESS: Room created and joined: room1
 Hello everyone!
-[02:54:18] [room1] alice: Hello everyone!
-[03:16:08] bob is sending file: greetings.txt (chunk 1/1)
-All chunks received for greetings.txt. Assembling file...
-File greetings.txt saved successfully to appData directory.
-[03:16:08] File greetings.txt uploaded by bob is available
 
 # Client 2
 /register bob pass123
-SUCCESS: Registered and logged in successfully
 /join room1
-[02:54:11] bob has joined the room
-SUCCESS: Joined room: room1
-[02:54:18] [room1] alice: Hello everyone!
 /file greetings.txt
-[03:16:08] bob is sending file: greetings.txt
-[03:16:08] File greetings.txt uploaded by bob is available
 /history
-Message history for room general:
-[03:24:18] [general] alice: Hello everyone!
-
-3. **Advanced Features Example**
 ```
-# Client 1 (alice)
-/login alice alice123
+
+### 3. Advanced Usage
+
+```bash
+# Client 1
+/login alice pass123
 /msg bob Hey bob!
-[DM to bob]: Hey bob!
 /encrypt bob Here's the secret message
-[Encrypted to bob]: Here's the secret message
 
-# Client 2 (bob) - Still connected
-[12:34:56] [DM from alice]: Hey bob!
-[12:35:01] [Encrypted from alice]: Here's the secret message
+# Client 2
+[DM from alice]: Hey bob!
+[Encrypted from alice]: Here's the secret message
 ```
 
-## Project Structure
+---
+
+## 🗂️ Project Structure
 
 ```
 proj/
 ├── server/
-│   ├── main.go          # Server entry point
-│   ├── server.go        # Core server implementation
-│   ├── client.go        # Client handler
-│   ├── room.go          # Room management
-│   ├── auth.go          # Authentication
-│   └── message_store.go # Message persistence
+│   ├── main.go            # Entry point
+│   ├── server.go          # TCP server logic
+│   ├── client.go          # Client session handler
+│   ├── room.go            # Room lifecycle & broadcasting
+│   ├── auth.go            # User auth logic
+│   └── message_store.go   # Persistent storage handling
 ├── client/
-│   └── main.go          # Client implementation
+│   └── main.go            # Client CLI implementation
 ├── shared/
-│   ├── message.go       # Message types
-│   ├── file.go         # File handling
-│   └── events.go       # Event system
-├── build.bat           # Build script
-└── README.md          # This file
+│   ├── message.go         # Message struct & types
+│   ├── file.go            # File chunking & assembly
+│   └── events.go          # Event definitions
+├── build.bat              # Windows build script
+└── README.md              # You’re reading it 😉
 ```
 
-## Data Storage
+---
 
-- Message history: `message_history/*.json`
-- Uploaded files: `uploads/<room-name>/`
-- Downloaded files: `appData/`
+## 💾 Data Storage
 
-## Security Notes
+* Message logs: `message_history/*.json`
+* Server-side uploads: `uploads/<room-name>/`
+* Client-side downloads: `appData/`
 
-- Passwords are hashed using SHA-256
-- Direct messages can be encrypted using AES-128
-- For demonstration purposes, a fixed encryption key is used
-- In production, implement proper key exchange mechanisms
+---
 
-## Error Handling
+## 🔐 Security Notes
 
-The application includes robust error handling for:
-- Network disconnections
-- Invalid commands
-- Missing permissions
-- File operations
-- Authentication failures
+* Passwords stored as **SHA-256 hashes**
+* Encrypted DMs use **AES-128** (with static demo key)
+* Production-grade version should use **proper key exchange (Diffie-Hellman or TLS)**
 
+---
+
+## 🛡️ Robust Error Handling
+
+Includes protections for:
+
+* Network interruptions
+* Malformed or unauthorized commands
+* File I/O issues
+* Authentication or room access failures
+
+---
+
+## 📌 Final Notes
+
+This project is a proof of concept for secure TCP-based chat systems in Go. Easily extensible to support:
+
+* WebSocket frontend
+* Token-based auth (JWT)
+* Group policies & moderation
+* Mobile client integrations
