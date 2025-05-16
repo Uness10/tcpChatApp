@@ -16,13 +16,14 @@ const (
 )
 
 type Server struct {
-	Addr        string
-	AuthManager *AuthManager
-	RoomManager *RoomManager
-	Clients     map[*Client]bool
-	Register    chan *Client
-	Unregister  chan *Client
-	mu          sync.RWMutex
+	Addr         string
+	AuthManager  *AuthManager
+	RoomManager  *RoomManager
+	MessageStore *MessageStore
+	Clients      map[*Client]bool
+	Register     chan *Client
+	Unregister   chan *Client
+	mu           sync.RWMutex
 }
 
 func NewServer(addr string) *Server {
@@ -33,6 +34,9 @@ func NewServer(addr string) *Server {
 		Register:    make(chan *Client),
 		Unregister:  make(chan *Client),
 	}
+
+	// Initialize message store
+	server.MessageStore = NewMessageStore(server)
 
 	// Initialize RoomManager with reference to server
 	server.RoomManager = NewRoomManager(server)

@@ -9,9 +9,8 @@ const (
 	MessageTypeCommand
 	MessageTypeFile
 	MessageTypeAuth
-	MessageTypeDirect   // Add type for direct messages
-	MessageTypeStatus   // Add type for status updates
-	MessageTypeTyping   // Add type for typing indicators
+	MessageTypeDirect    // Add type for direct messages
+	MessageTypeStatus    // Add type for status updates
 	MessageTypeEncrypted // Add type for encrypted messages
 )
 
@@ -60,10 +59,4 @@ type DirectMessage struct {
 type StatusMessage struct {
 	Message
 	Status UserStatus `json:"status"`
-}
-
-// TypingMessage indicates when a user is typing
-type TypingMessage struct {
-	Message
-	IsTyping bool `json:"is_typing"`
 }

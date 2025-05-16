@@ -120,6 +120,33 @@ func (c *Client) handleMessage(msg shared.Message, rawMsg []byte) {
 				}
 			}
 		}
+
+	case shared.MessageTypeDirect:
+		// Format direct messages differently
+		if msg.Sender == c.username {
+			fmt.Printf("[DM to %s]: %s\n", msg.Recipient, msg.Content)
+		} else {
+			fmt.Printf("[DM from %s]: %s\n", msg.Sender, msg.Content)
+		}
+
+	case shared.MessageTypeEncrypted:
+		// Handle encrypted messages by decrypting them
+		if msg.Encrypted {
+			// For simplicity, using the same key as on server
+			key := []byte("0123456789abcdef") // 16-byte key for AES-128
+
+			decrypted, err := shared.Decrypt(msg.Content, key)
+			if err != nil {
+				fmt.Printf("[Encrypted message error]: Could not decrypt\n")
+				return
+			}
+
+			if msg.Sender == c.username {
+				fmt.Printf("[Encrypted to %s]: %s\n", msg.Recipient, decrypted)
+			} else {
+				fmt.Printf("[Encrypted from %s]: %s\n", msg.Sender, decrypted)
+			}
+		}
 	}
 }
 
@@ -135,6 +162,10 @@ func (c *Client) handleInput() {
 	fmt.Println("  /join <room-name>")
 	fmt.Println("  /leave")
 	fmt.Println("  /file <filepath>")
+	fmt.Println("  /msg <username> <message>")
+	fmt.Println("  /encrypt <username> <message>")
+	fmt.Println("  /status <online|away|busy|offline>")
+	fmt.Println("  /history [username]")
 	fmt.Println("  /exit")
 
 	for scanner.Scan() {
@@ -330,6 +361,130 @@ func (c *Client) handleCommand(input string) {
 		// Remove "File sent successfully" message as it's misleading
 		// The server will respond with success or error
 
+	case "/msg":
+		if !c.isLoggedIn {
+			fmt.Println("You need to log in first")
+			return
+		}
+
+		if len(parts) < 3 {
+			fmt.Println("Usage: /msg <username> <message>")
+			return
+		}
+
+		recipient := parts[1]
+		content := strings.Join(parts[2:], " ")
+
+		msg := shared.Message{
+			Type:      shared.MessageTypeDirect,
+			Content:   content,
+			Recipient: recipient,
+			Timestamp: time.Now(),
+		}
+
+		msgBytes, _ := json.Marshal(msg)
+		c.conn.Write(msgBytes)
+		c.conn.Write([]byte("\n"))
+
+	case "/encrypt":
+		if !c.isLoggedIn {
+			fmt.Println("You need to log in first")
+			return
+		}
+
+		if len(parts) < 3 {
+			fmt.Println("Usage: /encrypt <username> <message>")
+			return
+		}
+
+		recipient := parts[1]
+		content := strings.Join(parts[2:], " ")
+
+		// Simple encryption demo
+		key := []byte("0123456789abcdef") // 16-byte key for AES-128
+		encryptedContent, err := shared.Encrypt(content, key)
+		if err != nil {
+			fmt.Printf("Error encrypting message: %v\n", err)
+			return
+		}
+
+		msg := shared.Message{
+			Type:      shared.MessageTypeEncrypted,
+			Content:   encryptedContent,
+			Recipient: recipient,
+			Timestamp: time.Now(),
+			Encrypted: true,
+		}
+
+		msgBytes, _ := json.Marshal(msg)
+		c.conn.Write(msgBytes)
+		c.conn.Write([]byte("\n"))
+
+	case "/status":
+		if !c.isLoggedIn {
+			fmt.Println("You need to log in first")
+			return
+		}
+
+		if len(parts) < 2 {
+			fmt.Println("Usage: /status <online|away|busy|offline>")
+			return
+		}
+
+		status := strings.ToLower(parts[1])
+		var statusValue shared.UserStatus
+
+		switch status {
+		case "online":
+			statusValue = shared.StatusOnline
+		case "away":
+			statusValue = shared.StatusAway
+		case "busy":
+			statusValue = shared.StatusBusy
+		case "offline":
+			statusValue = shared.StatusOffline
+		default:
+			fmt.Println("Invalid status. Use: online, away, busy, or offline")
+			return
+		}
+
+		statusMsg := shared.StatusMessage{
+			Message: shared.Message{
+				Type:      shared.MessageTypeStatus,
+				Timestamp: time.Now(),
+			},
+			Status: statusValue,
+		}
+
+		msgBytes, _ := json.Marshal(statusMsg)
+		c.conn.Write(msgBytes)
+		c.conn.Write([]byte("\n"))
+
+		fmt.Printf("Status updated to: %s\n", status)
+
+	case "/history":
+		if !c.isLoggedIn {
+			fmt.Println("You need to log in first")
+			return
+		}
+
+		var historyCmd string
+		if len(parts) > 1 {
+			historyCmd = "history " + parts[1] // Username for DM history
+		} else {
+			historyCmd = "history" // Room history
+		}
+
+		msg := shared.Message{
+			Type:      shared.MessageTypeCommand,
+			Content:   historyCmd,
+			Timestamp: time.Now(),
+		}
+
+		msgBytes, _ := json.Marshal(msg)
+		c.conn.Write(msgBytes)
+		c.conn.Write([]byte("\n"))
+
 	case "/exit":
 		fmt.Println("Exiting...")
 		c.conn.Close()
@@ -337,6 +492,7 @@ func (c *Client) handleCommand(input string) {
 
 	default:
 		fmt.Println("Unknown command:", cmd)
+		fmt.Println("Available commands: /register, /login, /rooms, /create, /join, /leave, /file, /msg, /encrypt, /status, /history, /exit")
 	}
 }
 

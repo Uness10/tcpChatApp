@@ -19,31 +19,31 @@ const (
 
 // MessageStore handles persisting and retrieving message history
 type MessageStore struct {
-	roomMessages map[string][]shared.Message
+	roomMessages   map[string][]shared.Message
 	directMessages map[string][]shared.Message // Key is "user1_user2" (always alphabetically sorted)
-	mu sync.RWMutex
-	server *Server
+	mu             sync.RWMutex
+	server         *Server
 }
 
 // NewMessageStore creates a new message store
 func NewMessageStore(server *Server) *MessageStore {
 	store := &MessageStore{
-		roomMessages: make(map[string][]shared.Message),
+		roomMessages:   make(map[string][]shared.Message),
 		directMessages: make(map[string][]shared.Message),
-		server: server,
+		server:         server,
 	}
-	
+
 	// Create message history directory if it doesn't exist
 	if err := os.MkdirAll(MessageHistoryDir, 0755); err != nil {
 		log.Printf("Failed to create message history directory: %v", err)
 	}
-	
+
 	// Load message history from disk
 	store.loadHistory()
-	
+
 	// Start periodic saving
 	go store.periodicSave()
-	
+
 	return store
 }
 
@@ -51,20 +51,20 @@ func NewMessageStore(server *Server) *MessageStore {
 func (ms *MessageStore) AddRoomMessage(roomName string, msg shared.Message) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
-	
+
 	messages, exists := ms.roomMessages[roomName]
 	if !exists {
 		messages = make([]shared.Message, 0, MaxRoomMessages)
 	}
-	
+
 	// Add message to history
 	messages = append(messages, msg)
-	
+
 	// Trim if we have too many messages
 	if len(messages) > MaxRoomMessages {
 		messages = messages[len(messages)-MaxRoomMessages:]
 	}
-	
+
 	ms.roomMessages[roomName] = messages
 }
 
@@ -72,16 +72,16 @@ func (ms *MessageStore) AddRoomMessage(roomName string, msg shared.Message) {
 func (ms *MessageStore) GetRoomHistory(roomName string) []shared.Message {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
-	
+
 	messages, exists := ms.roomMessages[roomName]
 	if !exists {
 		return []shared.Message{}
 	}
-	
+
 	// Return a copy to avoid race conditions
 	result := make([]shared.Message, len(messages))
 	copy(result, messages)
-	
+
 	return result
 }
 
@@ -89,26 +89,26 @@ func (ms *MessageStore) GetRoomHistory(roomName string) []shared.Message {
 func (ms *MessageStore) AddDirectMessage(from, to string, msg shared.Message) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
-	
+
 	// Always sort users alphabetically for consistent key
 	key := from + "_" + to
 	if from > to {
 		key = to + "_" + from
 	}
-	
+
 	messages, exists := ms.directMessages[key]
 	if !exists {
 		messages = make([]shared.Message, 0, MaxRoomMessages)
 	}
-	
+
 	// Add message to history
 	messages = append(messages, msg)
-	
+
 	// Trim if we have too many messages
 	if len(messages) > MaxRoomMessages {
 		messages = messages[len(messages)-MaxRoomMessages:]
 	}
-	
+
 	ms.directMessages[key] = messages
 }
 
@@ -116,22 +116,22 @@ func (ms *MessageStore) AddDirectMessage(from, to string, msg shared.Message) {
 func (ms *MessageStore) GetDirectMessageHistory(user1, user2 string) []shared.Message {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
-	
+
 	// Always sort users alphabetically for consistent key
 	key := user1 + "_" + user2
 	if user1 > user2 {
 		key = user2 + "_" + user1
 	}
-	
+
 	messages, exists := ms.directMessages[key]
 	if !exists {
 		return []shared.Message{}
 	}
-	
+
 	// Return a copy to avoid race conditions
 	result := make([]shared.Message, len(messages))
 	copy(result, messages)
-	
+
 	return result
 }
 
@@ -139,7 +139,7 @@ func (ms *MessageStore) GetDirectMessageHistory(user1, user2 string) []shared.Me
 func (ms *MessageStore) saveHistory() error {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
-	
+
 	// Save room messages
 	for room, messages := range ms.roomMessages {
 		data, err := json.Marshal(messages)
@@ -147,13 +147,13 @@ func (ms *MessageStore) saveHistory() error {
 			log.Printf("Failed to marshal room messages for %s: %v", room, err)
 			continue
 		}
-		
+
 		filename := filepath.Join(MessageHistoryDir, "room_"+room+".json")
 		if err := ioutil.WriteFile(filename, data, 0644); err != nil {
 			log.Printf("Failed to save room messages for %s: %v", room, err)
 		}
 	}
-	
+
 	// Save direct messages
 	for key, messages := range ms.directMessages {
 		data, err := json.Marshal(messages)
@@ -161,13 +161,13 @@ func (ms *MessageStore) saveHistory() error {
 			log.Printf("Failed to marshal direct messages for %s: %v", key, err)
 			continue
 		}
-		
+
 		filename := filepath.Join(MessageHistoryDir, "dm_"+key+".json")
 		if err := ioutil.WriteFile(filename, data, 0644); err != nil {
 			log.Printf("Failed to save direct messages for %s: %v", key, err)
 		}
 	}
-	
+
 	log.Println("Message history saved successfully")
 	return nil
 }
@@ -185,25 +185,25 @@ func (ms *MessageStore) loadHistory() {
 		log.Printf("Failed to read message history directory: %v", err)
 		return
 	}
-	
+
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
-		
+
 		filename := filepath.Join(MessageHistoryDir, file.Name())
 		data, err := ioutil.ReadFile(filename)
 		if err != nil {
 			log.Printf("Failed to read message history file %s: %v", filename, err)
 			continue
 		}
-		
+
 		var messages []shared.Message
 		if err := json.Unmarshal(data, &messages); err != nil {
 			log.Printf("Failed to unmarshal message history from %s: %v", filename, err)
 			continue
 		}
-		
+
 		// Determine if this is a room or direct message history
 		if len(file.Name()) > 5 && file.Name()[:5] == "room_" {
 			roomName := file.Name()[5 : len(file.Name())-5] // Remove "room_" prefix and ".json" suffix
@@ -213,7 +213,7 @@ func (ms *MessageStore) loadHistory() {
 			ms.directMessages[key] = messages
 		}
 	}
-	
+
 	log.Println("Message history loaded successfully")
 }
 
@@ -221,7 +221,7 @@ func (ms *MessageStore) loadHistory() {
 func (ms *MessageStore) periodicSave() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		if err := ms.saveHistory(); err != nil {
 			log.Printf("Periodic message history save failed: %v", err)
